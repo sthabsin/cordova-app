@@ -1,0 +1,95 @@
+fastlane_version "1.91.0"
+
+default_platform :ios
+
+platform :ios do
+  ENV['FASTLANE_USER']="krish@seattleapplab.com"
+  ENV['FASTLANE_PASSWORD']="exBXBW-0mEh2"
+  ENV["FASTLANE_ITC_TEAM_ID"] = "2050771" # if team id exists else remove line
+  ENV["FASTLANE_ITC_TEAM_NAME"] = "SABTHOK INTERNATIONAL LLC"
+
+  package_name = "com.latest.first"
+  app_name = "Latest First App"
+  xcodeproj = "./platforms/ios/#{app_name}.xcodeproj"
+  testers = ['krish@seattleapplab.com', 'sthasbin@jaljale.com']
+
+  before_all do
+    # ENV["SLACK_URL"] = "https://hooks.slack.com/services/..."
+  end
+
+  desc "Create an app identifier on the developer member center and iTunes Connect"
+  desc "This will also make sure the profile is up to date"
+  lane :initialize do
+    produce(
+    app_name: "LatestFirst app by jaljale",
+    app_identifier: package_name
+    )
+  end
+
+  desc "bump app build number"
+  lane :bumpbuild do
+    increment_version_number(
+       bump_type: "patch", # "major" or "minor" or "patch" #or version_number: "2.1.1",
+       xcodeproj: xcodeproj
+     )
+  end
+
+  ###############################################################################
+  ####################### BETA TESTING (TestFlight) LANES #######################
+
+  desc "Submit a new Beta Build to Apple TestFlight"
+  lane :beta do
+    cert # Get certificate
+    sigh(force: true) # Get provisioning profile
+
+    set_info_plist_value(
+      path: "platforms/ios/#{app_name}/#{app_name}-Info.plist",
+      key: "ITSAppUsesNonExemptEncryption",
+      value: "false"
+    )
+
+    recreate_schemes(project: xcodeproj)
+
+    gym # Build your app - more options available
+    
+    testers.each do |tester|
+      sh("pilot add #{tester} -a #{package_name}") # add email to beta tester for the app
+    end
+
+    pilot # TestFlight Release
+  end
+
+  ###############################################################################
+  ############################## PRODUCTION LANES ###############################
+
+  desc "generate fake screenshots of ios devices"
+  lane :fakeScreenshots do
+    fake_screenshots
+  end
+
+  desc "Deploy a new version to the App Store"
+  lane :appstore do
+    set_info_plist_value(
+      path: "platforms/ios/#{app_name}/#{app_name}-Info.plist",
+      key: "ITSAppUsesNonExemptEncryption",
+      value: "false"
+    )
+    recreate_schemes(project: xcodeproj)
+    gym(scheme: app_name, project: xcodeproj) # Build your app - more options available
+    deliver(force: true)
+  end
+
+  # You can define as many lanes as you want
+
+  after_all do |lane|
+    # This block is called, only if the executed lane was successful
+  end
+
+  error do |lane, exception|
+    # slack(
+    #   message: exception.message,
+    #   success: false
+    # )
+  end
+end
+
